@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia';
 import { db, toPlain } from '../utils/db';
 import { newId } from '../utils/id';
+import { removeEntity, upsertEntity } from '../utils/syncRepo';
+import type { SyncEntity } from '../types/sync';
 import type { TunnelFace, TunnelFaceDraft } from '../types/face';
 
 interface FaceState {
@@ -19,22 +21,25 @@ export const useFaceStore = defineStore('face', {
     async load() {
       const rows = await db.faces.toArray();
       rows.sort((a, b) => b.chainage - a.chainage);
-      this.items = rows;
+      this.items = rows as TunnelFace[];
       this.loaded = true;
     },
     async add(draft: TunnelFaceDraft) {
-      const record: TunnelFace = { ...toPlain(draft), id: newId('face'), recordedAt: Date.now() };
-      await db.faces.put(toPlain(record));
-      this.items = [...this.items, record].sort((a, b) => b.chainage - a.chainage);
-      return record;
+      const record = { ...toPlain(draft), id: newId('face'), recordedAt: Date.now() };
+      const saved = (await upsertEntity('faces', record as unknown as SyncEntity)) as unknown as TunnelFace;
+      this.items = [...this.items, saved].sort((a, b) => b.chainage - a.chainage);
+      return saved;
     },
     async update(id: string, patch: Partial<TunnelFace>) {
-      const plain = toPlain(patch);
-      await db.faces.update(id, plain);
-      this.items = this.items.map((it) => (it.id === id ? { ...it, ...plain } : it));
+      const current = await db.faces.get(id);
+      if (!current) return;
+      const merged = { ...toPlain(current), ...toPlain(patch) } as unknown as SyncEntity;
+      const saved = (await upsertEntity('faces', merged)) as unknown as TunnelFace;
+      this.items = this.items.map((it) => (it.id === id ? saved : it));
     },
     async remove(id: string) {
-      await db.faces.delete(id);
+      // 连带子记录（节理/级别/涌水/素描）由同步仓储统一删除并各自记操作日志
+      await removeEntity('faces', id);
       this.items = this.items.filter((it) => it.id !== id);
     },
     /** 复制上一循环（里程更小的最近一个掌子面）的信息作为草稿 */

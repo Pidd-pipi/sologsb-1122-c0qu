@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { Attitude } from '../../types/face';
+import { getSketch, onDataChange, putSketch } from '../../utils/syncRepo';
 
 export interface SketchSegment {
   id: string;
@@ -32,8 +33,8 @@ const emit = defineEmits<{
 const VB = { w: 660, h: 380 };
 const segments = ref<SketchSegment[]>([]);
 const selectedId = ref('');
-
-const storageKey = computed(() => `gbtunnelface:sketch:${props.faceId}`);
+let saving = false;
+let dirty = false;
 
 /** 岩性填充纹样：按岩性选择不同 SVG pattern */
 const patternId = computed(() => {
@@ -56,20 +57,27 @@ const patternLabel = computed(() => {
   return map[patternId.value] ?? '通用纹样';
 });
 
-function load() {
-  try {
-    const raw = window.localStorage.getItem(storageKey.value);
-    segments.value = raw ? (JSON.parse(raw) as SketchSegment[]) : [];
-  } catch {
-    segments.value = [];
-  }
+async function load() {
+  const doc = await getSketch(props.faceId);
+  segments.value = doc ? doc.segments : [];
+  selectedId.value = '';
+  emit('change', segments.value);
 }
 
-function persist() {
+async function persist() {
+  if (saving) {
+    dirty = true;
+    return;
+  }
+  saving = true;
   try {
-    window.localStorage.setItem(storageKey.value, JSON.stringify(segments.value));
-  } catch {
-    /* 忽略存储失败 */
+    await putSketch(props.faceId, segments.value);
+  } finally {
+    saving = false;
+  }
+  if (dirty) {
+    dirty = false;
+    void persist();
   }
   emit('change', segments.value);
 }
@@ -126,7 +134,11 @@ function tickOf(seg: SketchSegment) {
 
 onMounted(load);
 watch(() => props.faceId, load);
-watch(storageKey, persist);
+// 合并作业包后素描可能被更新：数据变更时重读当前掌子面
+const unsubscribe = onDataChange(() => {
+  void load();
+});
+onUnmounted(unsubscribe);
 </script>
 
 <template>

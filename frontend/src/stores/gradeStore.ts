@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia';
 import { db, toPlain } from '../utils/db';
 import { newId } from '../utils/id';
+import { removeEntity, upsertEntity } from '../utils/syncRepo';
+import type { SyncEntity } from '../types/sync';
 import type { RockMassGrade, RockMassGradeDraft } from '../types/grade';
 import type { WaterInflow, WaterInflowDraft } from '../types/water';
 
@@ -23,25 +25,25 @@ export const useGradeStore = defineStore('grade', {
   actions: {
     async load() {
       const grades = await db.grades.toArray();
-      this.items = grades.sort((a, b) => b.judgedAt - a.judgedAt);
+      this.items = grades.sort((a, b) => b.judgedAt - a.judgedAt) as RockMassGrade[];
       const waters = await db.waters.toArray();
-      this.waters = waters.sort((a, b) => a.chainage - b.chainage);
+      this.waters = waters.sort((a, b) => a.chainage - b.chainage) as WaterInflow[];
       this.loaded = true;
     },
     async addGrade(draft: RockMassGradeDraft) {
-      const record: RockMassGrade = { ...toPlain(draft), id: newId('grade'), judgedAt: Date.now() };
-      await db.grades.put(toPlain(record));
-      this.items = [record, ...this.items];
-      return record;
+      const record = { ...toPlain(draft), id: newId('grade'), judgedAt: Date.now() };
+      const saved = (await upsertEntity('grades', record as unknown as SyncEntity)) as unknown as RockMassGrade;
+      this.items = [saved, ...this.items];
+      return saved;
     },
     async addWater(draft: WaterInflowDraft) {
-      const record: WaterInflow = { ...toPlain(draft), id: newId('water'), measuredAt: Date.now() };
-      await db.waters.put(toPlain(record));
-      this.waters = [...this.waters, record].sort((a, b) => a.chainage - b.chainage);
-      return record;
+      const record = { ...toPlain(draft), id: newId('water'), measuredAt: Date.now() };
+      const saved = (await upsertEntity('waters', record as unknown as SyncEntity)) as unknown as WaterInflow;
+      this.waters = [...this.waters, saved].sort((a, b) => a.chainage - b.chainage);
+      return saved;
     },
     async removeWater(id: string) {
-      await db.waters.delete(id);
+      await removeEntity('waters', id);
       this.waters = this.waters.filter((it) => it.id !== id);
     },
   },

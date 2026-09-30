@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia';
 import { db, toPlain } from '../utils/db';
 import { newId } from '../utils/id';
+import { removeEntity, upsertEntity } from '../utils/syncRepo';
+import type { SyncEntity } from '../types/sync';
 import type { JointSet, JointSetDraft } from '../types/joint';
 
 interface JointState {
@@ -18,22 +20,24 @@ export const useJointStore = defineStore('joint', {
     async load() {
       const rows = await db.joints.toArray();
       rows.sort((a, b) => a.setNo - b.setNo);
-      this.items = rows;
+      this.items = rows as JointSet[];
       this.loaded = true;
     },
     async add(draft: JointSetDraft) {
-      const record: JointSet = { ...toPlain(draft), id: newId('joint') };
-      await db.joints.put(toPlain(record));
-      this.items = [...this.items, record];
-      return record;
+      const record = { ...toPlain(draft), id: newId('joint') };
+      const saved = (await upsertEntity('joints', record as unknown as SyncEntity)) as unknown as JointSet;
+      this.items = [...this.items, saved];
+      return saved;
     },
     async update(id: string, patch: Partial<JointSet>) {
-      const plain = toPlain(patch);
-      await db.joints.update(id, plain);
-      this.items = this.items.map((it) => (it.id === id ? { ...it, ...plain } : it));
+      const current = await db.joints.get(id);
+      if (!current) return;
+      const merged = { ...toPlain(current), ...toPlain(patch) } as unknown as SyncEntity;
+      const saved = (await upsertEntity('joints', merged)) as unknown as JointSet;
+      this.items = this.items.map((it) => (it.id === id ? saved : it));
     },
     async remove(id: string) {
-      await db.joints.delete(id);
+      await removeEntity('joints', id);
       this.items = this.items.filter((it) => it.id !== id);
     },
     /** 把同组产状合并到指定组：把被合并组的条数累加到目标组并删除被合并组 */

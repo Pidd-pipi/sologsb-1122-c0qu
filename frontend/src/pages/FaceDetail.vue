@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useFaceStore } from '../stores/faceStore';
 import { useGradeStore } from '../stores/gradeStore';
@@ -9,6 +9,10 @@ import SketchCanvas from '../components/common/SketchCanvas.vue';
 import GradeTag from '../components/common/GradeTag.vue';
 import { attitudeText, formatChainage } from '../utils/geoMath';
 import { GRADE_SUPPORT } from '../types/grade';
+import { shortDevice } from '../utils/merge';
+import { db } from '../utils/db';
+import { onDataChange } from '../utils/syncRepo';
+import type { VersionVector } from '../types/sync';
 
 const route = useRoute();
 const router = useRouter();
@@ -20,8 +24,36 @@ const faceId = computed(() => String(route.params.id ?? ''));
 const face = computed(() => faceStore.byId(faceId.value));
 const joints = computed(() => jointStore.byFace(faceId.value));
 const grades = computed(() => gradeStore.byFace(faceId.value));
+const waters = computed(() => gradeStore.watersByFace(faceId.value));
 const latest = computed(() => grades.value[0]);
 const previousGrade = computed(() => grades.value[1]);
+const faceVersion = ref<VersionVector>({});
+
+const versionText = computed(() =>
+  Object.entries(faceVersion.value)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([d, n]) => `${shortDevice(d)}:${n}`)
+    .join(' · '),
+);
+
+async function refreshFaceVersion() {
+  const vv: VersionVector = {};
+  const mergeInto = (src?: VersionVector) => {
+    if (!src) return;
+    for (const k of new Set([...Object.keys(vv), ...Object.keys(src)])) {
+      vv[k] = Math.max(vv[k] ?? 0, src[k] ?? 0);
+    }
+  };
+  const f = await db.faces.get(faceId.value);
+  mergeInto(f?._sync?.vv);
+  for (const t of [db.joints, db.grades, db.waters] as const) {
+    const rows = (await t.where('faceId').equals(faceId.value).toArray()) as Array<{ _sync?: { vv: VersionVector } }>;
+    rows.forEach((r) => mergeInto(r._sync?.vv));
+  }
+  const sketch = await db.sketches.get(faceId.value);
+  mergeInto(sketch?._sync.vv);
+  faceVersion.value = vv;
+}
 
 const { result, patch } = useGradeCalc(() => joints.value);
 const segmentCount = ref(0);
@@ -43,14 +75,22 @@ const gradeCompare = computed(() => {
     : `较上一循环变好 ${-delta} 级：${previousGrade.value.grade} → ${latest.value.grade}`;
 });
 
+let unsubscribeData: (() => void) | undefined;
+
 onMounted(async () => {
   await faceStore.load();
   await jointStore.load();
   await gradeStore.load();
+  await refreshFaceVersion();
   if (face.value) {
     patch({ rockStrength: face.value.rockStrength, spanWidth: Number(face.value.faceSize.split('×')[0]) || 12 });
   }
+  unsubscribeData = onDataChange(() => {
+    void refreshFaceVersion();
+  });
 });
+
+onUnmounted(() => unsubscribeData?.());
 </script>
 
 <template>
@@ -60,6 +100,8 @@ onMounted(async () => {
       <GradeTag v-if="latest" :grade="latest.grade" />
       <el-tag v-else type="info">未判定级别</el-tag>
       <el-tag type="info" effect="plain">节理 {{ joints.length }} 组</el-tag>
+      <el-tag type="info" effect="plain">涌水 {{ waters.length }} 条</el-tag>
+      <el-tag type="success" effect="plain">掌子面版本 {{ versionText || '—' }}</el-tag>
       <div class="spacer" />
       <el-button type="primary" @click="router.push(`/faces/${faceId}/joints`)">节理录入</el-button>
       <el-button @click="router.push(`/faces/${faceId}/water`)">涌水记录</el-button>

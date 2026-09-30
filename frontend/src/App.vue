@@ -1,12 +1,20 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { readDbVersion } from './utils/db';
+import { onDataChange } from './utils/syncRepo';
+import { useFaceStore } from './stores/faceStore';
+import { useJointStore } from './stores/jointStore';
+import { useGradeStore } from './stores/gradeStore';
 
 const route = useRoute();
 const router = useRouter();
+const faceStore = useFaceStore();
+const jointStore = useJointStore();
+const gradeStore = useGradeStore();
 
 const activeMenu = computed(() => {
+  if (route.path.startsWith('/sync')) return '/sync';
   if (route.path.startsWith('/faces')) {
     if (route.path.endsWith('/joints')) return '/faces/joints';
     if (route.path.endsWith('/water')) return '/faces/water';
@@ -26,6 +34,13 @@ function onSelect(index: string) {
   }
   void router.push(index);
 }
+
+// 合并写库后所有页面统一重读同一份结果（台账 / 详情 / 涌水趋势 / 级别判定共用各 Store）
+onMounted(() => {
+  onDataChange(async () => {
+    await Promise.all([faceStore.load(), jointStore.load(), gradeStore.load()]);
+  });
+});
 </script>
 
 <template>
@@ -37,6 +52,7 @@ function onSelect(index: string) {
         <el-menu-item index="/faces/joints">节理产状</el-menu-item>
         <el-menu-item index="/faces/water">涌水记录</el-menu-item>
         <el-menu-item index="/grade">围岩级别</el-menu-item>
+        <el-menu-item index="/sync">作业包合并</el-menu-item>
       </el-menu>
       <el-tag size="small" effect="plain">本地结构版本 v{{ version }}</el-tag>
     </el-header>
