@@ -1,0 +1,9 @@
+name: gbtunnelface
+
+services:
+  frontend:
+    build: ./frontend
+    container_name: ${COMPOSE_PROJECT_NAME:-gbtunnelface}-frontend
+    ports:
+      - "${FRONTEND_PORT:-21822}:80"
+    restart: unless-stopped
