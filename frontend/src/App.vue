@@ -7,6 +7,7 @@ const route = useRoute();
 const router = useRouter();
 
 const activeMenu = computed(() => {
+  if (route.path.startsWith('/merge')) return '/merge';
   if (route.path.startsWith('/faces')) {
     if (route.path.endsWith('/joints')) return '/faces/joints';
     if (route.path.endsWith('/water')) return '/faces/water';
@@ -37,6 +38,7 @@ function onSelect(index: string) {
         <el-menu-item index="/faces/joints">节理产状</el-menu-item>
         <el-menu-item index="/faces/water">涌水记录</el-menu-item>
         <el-menu-item index="/grade">围岩级别</el-menu-item>
+        <el-menu-item index="/merge">离线合并</el-menu-item>
       </el-menu>
       <el-tag size="small" effect="plain">本地结构版本 v{{ version }}</el-tag>
     </el-header>

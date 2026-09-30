@@ -23,7 +23,7 @@ export const useFaceStore = defineStore('face', {
       this.loaded = true;
     },
     async add(draft: TunnelFaceDraft) {
-      const record: TunnelFace = { ...toPlain(draft), id: newId('face'), recordedAt: Date.now() };
+      const record: TunnelFace = { ...toPlain(draft), id: newId('face'), recordedAt: Date.now(), version: 1 };
       await db.faces.put(toPlain(record));
       this.items = [...this.items, record].sort((a, b) => b.chainage - a.chainage);
       return record;

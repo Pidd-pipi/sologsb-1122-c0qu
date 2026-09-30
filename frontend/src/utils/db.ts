@@ -3,10 +3,11 @@ import type { TunnelFace } from '../types/face';
 import type { JointSet } from '../types/joint';
 import type { RockMassGrade } from '../types/grade';
 import type { WaterInflow } from '../types/water';
+import type { ImportRecord } from '../types/package';
 import { newId } from './id';
 
 export const DB_NAME = 'gbtunnelface';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 export const LS_VERSION_KEY = 'gbtunnelface:db-version';
 
 class TunnelFaceDB extends Dexie {
@@ -14,6 +15,7 @@ class TunnelFaceDB extends Dexie {
   joints!: Table<JointSet, string>;
   grades!: Table<RockMassGrade, string>;
   waters!: Table<WaterInflow, string>;
+  imports!: Table<ImportRecord, string>;
 
   constructor() {
     super(DB_NAME);
@@ -50,6 +52,22 @@ class TunnelFaceDB extends Dexie {
           .toCollection()
           .modify((row: any) => {
             if (row.chainage === undefined) row.chainage = 0;
+          });
+      });
+    this.version(3)
+      .stores({
+        faces: 'id, faceNo, chainage, lithology, excavationMethod, weathering, recordedAt, version',
+        joints: 'id, faceId, setNo, dipDirection, dipAngle, fillMaterial',
+        grades: 'id, faceId, grade, judgedAt, bqValue',
+        waters: 'id, faceId, chainage, type, changeTrend',
+        imports: 'id, packageId, contentHash, packageNo, geologist, importedAt',
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table('faces')
+          .toCollection()
+          .modify((row: any) => {
+            if (row.version === undefined) row.version = 1;
           });
       });
   }
@@ -108,6 +126,7 @@ export async function ensureSeedData(): Promise<void> {
       attitude: { strike: 42, dipDirection: 132, dipAngle: 34 },
       recordedAt: now - 2 * day,
       geologist: '岑柏川',
+      version: 1,
     },
     {
       id: face2,
@@ -122,6 +141,7 @@ export async function ensureSeedData(): Promise<void> {
       attitude: { strike: 48, dipDirection: 138, dipAngle: 28 },
       recordedAt: now - 6 * hour,
       geologist: '岑柏川',
+      version: 1,
     },
   ];
 
